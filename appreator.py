@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
-# Configuracoes da pagina usando os comandos obrigatorios da biblioteca
+# Configuracoes da pagina (comandos obrigatorios da biblioteca)
 st.set_page_config(
     page_title="Simulador de Reator PFR",
     page_icon="🧪",
@@ -30,6 +30,14 @@ patm = st.sidebar.number_input("Pressao de Operacao (atm)", min_value=0.1, value
 v0 = st.sidebar.number_input("Vazao Volumétrica Inicial (L/min)", min_value=0.1, value=10.0, step=1.0)
 vtotal = st.sidebar.number_input("Volume total do Reator PFR (L)", min_value=1.0, value=100.0, step=10.0)
 
+# CONVERSAO ALVO OPTATIVA: Se marcar, calcula o Volume. Se desmarcar, calcula a Conversao.
+definirXalvo = st.sidebar.checkbox("Definir Conversao Alvo (Calcular Volume)", value=False)
+if definirXalvo:
+    Xalvo = st.sidebar.number_input("Conversao Alvo Desejada (X de 0 a 0.999)", min_value=0.0, max_value=0.999, value=0.80, step=0.05)
+    st.sidebar.caption("💡 O volume total informado acima sera ignorado e recalculado pelo sistema.")
+else:
+    Xalvo = None
+
 # Conversao da temperatura para Kelvin
 tempK = tempC + 273.15
 
@@ -52,7 +60,7 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Estequiometria e Alimentacao")
 
-# Calculo automatico da densidade molar total se for gas
+# Calculo de gases ideais
 if fasesistema == "Gasosa":
     ctotal0 = patm / (Ratm * tempK)
 else:
@@ -82,7 +90,6 @@ for i in range(int(numreagentes)):
     
     reagentes.append({"coef": coef, "c0": c0, "y0": y0})
 
-# Validacao simples das fracoes molares
 if fasesistema == "Gasosa":
     if somay0 > 1.0:
         st.sidebar.error(f"❌ Erro: A soma das fracoes molares superou 1.0!")
@@ -100,7 +107,6 @@ for i in range(int(numprodutos)):
     coef = st.sidebar.number_input(f"Coef. Esteq. Produto {i+1}", min_value=0.1, value=1.0, step=0.5, key=f"coefp{i}")
     produtos.append({"coef": coef})
 
-# Caixa de selecao para mostrar tabela
 mostrartabela = st.sidebar.checkbox("Mostrar tabela de valores intermediarios", value=True)
 simular = st.sidebar.button("Simular")
 
@@ -110,18 +116,17 @@ st.sidebar.write("email: gabriel.freitas.00@edu.ufes.br")
 
 
 # ==========================================
-# EQUACOES E RESOLUCAO DO BALANCO
+# MOTOR MATEMATICO DE RESOLUÇÃO (ROBUSTO)
 # ==========================================
 
 if dadosinvalidos:
     st.error("Corrija os erros de fracao molar para rodar o simulador.")
 else:
-    # Variaveis do componente limitante A
     ca0 = reagentes[0]["c0"]
     coefA = reagentes[0]["coef"]
     ya0 = reagentes[0]["y0"] if fasesistema == "Gasosa" else 0.0
 
-    # Calculo do delta e do fator de expansao epsilon
+    # Calculo estequiometrico global do delta e expansao epsilon
     somacoefreagentes = sum([r["coef"] for r in reagentes])
     somacoefprodutos = sum([p["coef"] for p in produtos])
     delta = (somacoefprodutos - somacoefreagentes) / coefA
@@ -132,45 +137,53 @@ else:
         fa0 = ca0val * v0val
         vlocal = v0val * (1 + eps * X)
         vlocal = max(vlocal, 1e-6) 
-        
         ca = (ca0val * (1 - X)) / (1 + eps * X)
         ca = max(ca, 0.0)
-        
         ra = k * ca
         dxdv = ra / fa0
         return dxdv
 
-    # Criando o vetor de volume para integrar
-    vspan = np.linspace(0, vtotal, 200)
+    # CONDICIONAL DA INCÓGNITA: Verifica qual modo de calculo rodar
+    if definirXalvo and Xalvo > 0:
+        # Modo Reverso: O usuario deu a conversao, calculamos o volume por integracao analitica de 1a ordem
+        termoLn = np.log(1 / (1 - Xalvo))
+        Vcalculado = (v0 / kfinal) * ((1 + epsilon) * termoLn - epsilon * Xalvo)
+        vtotalUsado = Vcalculado
+    else:
+        # Modo Direto Normal: Usa o volume fixo digitado pelo usuario
+        vtotalUsado = vtotal
+
+    # Define a malha de integracao ate o volume correto (recalculado ou fixo)
+    vspan = np.linspace(0, vtotalUsado, 200)
     X0 = 0.0
 
-    # Resolvendo a EDO com o odeint
+    # Resolucao numerica final do perfil axial
     Xres = odeint(pfrsystem, X0, vspan, args=(kfinal, ca0, v0, epsilon)).flatten()
     caPerfil = (ca0 * (1 - Xres)) / (1 + epsilon * Xres)
     vPerfil = v0 * (1 + epsilon * Xres)
 
     # ==========================================
-    # MOSTRAR RESULTADOS NA TELA
+    # APRESENTAÇÃO DOS RESULTADOS NA INTERFACE
     # ==========================================
 
     st.title("Simulador de Reator Fluxo Pistão (PFR)")
 
     st.warning(
-        "⚠️ **NOTA DE MODELAGEM:** Este simulador assume regime permanente em um reator **Isotérmico** e **Isobárico**."
+        "⚠️ **NOTE DE MODELAGEM:** Este simulador assume regime permanente em um reator **Isotérmico** e **Isobárico**."
     )
 
     st.info(
         f"Fase de Escoamento: **{fasesistema}** | "
         f"Constante Cinética: **{kfinal:.4e}** | "
-        f"Fator de Expansão: **{epsilon:.4f}**"
+        f"Fator de Expansão ($\epsilon$): **{epsilon:.4f}**"
     )
 
-    # Cards com as respostas finais
+    # Cards atualizados dinamicamente
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Conversao de Saida (X)", f"{Xres[-1] * 100:.2f} %")
     col2.metric("Conc. Final Limitante (Ca)", f"{caPerfil[-1]:.3f} mol/L")
     col3.metric("Vazao Volumétrica de Saida", f"{vPerfil[-1]:.2f} L/min")
-    col4.metric("C0 do Limitante Alimentado", f"{ca0:.3f} mol/L")
+    col4.metric("Volume do Reator Usado (V)", f"{vtotalUsado:.2f} L")
 
     st.write("---")
     st.subheader("Gráficos Principais de Desempenho")
@@ -178,7 +191,6 @@ else:
     colg1, colg2 = st.columns(2)
 
     with colg1:
-        # Grafico da conversao pelo volume
         fig1, ax1 = plt.subplots(figsize=(6, 4))
         ax1.plot(vspan, Xres * 100, color='crimson', linewidth=2.5)
         ax1.set_title("Evolucao da Conversao ao Longo do Reator", fontsize=11, fontweight='bold')
@@ -188,7 +200,6 @@ else:
         st.pyplot(fig1)
 
     with colg2:
-        # Grafico da concentracao pelo volume
         fig2, ax2 = plt.subplots(figsize=(6, 4))
         ax2.plot(vspan, caPerfil, color='royalblue', linewidth=2.5)
         ax2.set_title("Perfil de Concentracao do Limitante (Ca)", fontsize=11, fontweight='bold')
@@ -197,7 +208,7 @@ else:
         ax2.grid(True, linestyle=':', alpha=0.7)
         st.pyplot(fig2)
 
-    # Mostrar tabela com os dados gerados
+    # Tabela rica com amostragem numerica
     if mostrartabela:
         st.write("---")
         st.subheader("Amostragem Numerica do Perfil Axial")
@@ -206,10 +217,9 @@ else:
             "Volume (L)": vspan,
             "Conversao (X)": Xres,
             "Concentracao A (mol/L)": caPerfil,
-            "Vazao Local (L/min)": vPerfil
+            "Vazão Local (L/min)": vPerfil
         })
         
-        # Pega as linhas pulando de 10 em 10 para ficar menor
         dfresumido = dfresultados.iloc[::10, :].copy()
         dfresumido = pd.concat([dfresumido, dfresultados.iloc[[-1]]]).drop_duplicates()
         
