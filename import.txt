@@ -1,5 +1,5 @@
-streamlit as st
-numpy as np
-pandas as pd
-matplotlib.pyplot as plt
-from scipy.integrate import odeint
+streamlit
+numpy
+pandas
+matplotlib
+scipy
