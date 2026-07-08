@@ -44,12 +44,11 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("💧 Reagentes na Alimentação")
-# Limitado agora a no máximo 2 reagentes
 num_reagentes = st.sidebar.slider("Número de Reagentes", 1, 2, 1)
 
 reagentes = []
 for i in range(num_reagentes):
-    st.sidebar.markdown(f"**Reagente {chr(65+i)}** {'(Limitante)' if i==0 else ''}")
+    st.sidebar.markdown(f"**Reagente {chr(65+i)}** {'(Limitante A)' if i==0 else ''}")
     col1, col2 = st.sidebar.columns(2)
     coef = col1.number_input("Coeficiente", value=1.0, key=f"coef{i}")
     c0 = col2.number_input("C0 (mol/L)", value=2.0 if i==0 else 1.0, key=f"c0{i}")
@@ -63,10 +62,9 @@ st.sidebar.write("UFES - Projeto Computacional")
 
 
 # ==========================================
-# MOTOR MATEMÁTICO (ESTILO ESTUDANTE)
+# MOTOR MATEMÁTICO (COM TRAVAS DE SEGURANÇA)
 # ==========================================
 
-# Pegar os dados do reagente limitante (sempre o primeiro, Reagente A)
 ca0 = reagentes[0]["c0"]
 coefA = reagentes[0]["coef"]
 
@@ -74,39 +72,58 @@ coefA = reagentes[0]["coef"]
 def edopfr(v, x_conv):
     conversao = x_conv[0]
     
-    # 1. Calcular a concentração do Reagente A (Limitante)
+    # TRAVA 1: A conversão matematicamente nunca pode passar de 1.0 (100%)
+    if conversao >= 1.0:
+        return [0.0]
+    
+    # Calcular a concentração do Reagente A (Limitante)
     ca = ca0 * (1 - conversao)
     
-    # 2. Base da taxa de reação
+    # TRAVA 2: A concentração de A não pode ficar negativa
+    if ca <= 0.0:
+        ca = 0.0
+        
     ra = k * ca
     
-    # 3. Incluir a concentração do segundo reagente na taxa (se existir)
+    # Incluir o balanço do segundo reagente na taxa (se existir)
     if num_reagentes == 2:
         cb0 = reagentes[1]["c0"]
         coefB = reagentes[1]["coef"]
         
-        # Balanço estequiométrico simples para o reagente B
         cb = cb0 - (coefB / coefA) * (ca0 * conversao)
-        cb = max(cb, 0.0) # Evitar que fique negativo matematicamente
-        ra = ra * cb
+        
+        # TRAVA 3: Se o Reagente B acabar antes do A, a reação tem que parar imediatamente!
+        if cb <= 0.0:
+            cb = 0.0
+            ra = 0.0 
+        else:
+            ra = ra * cb
 
-    # 4. Finalizar a EDO dX/dV
+    # Finalizar a derivada dX/dV
     fa0 = ca0 * v0
-    dxdv = ra / fa0
     
+    # TRAVA 4: Prevenção contra divisão por zero se a vazão for 0
+    if fa0 == 0:
+        return [0.0]
+        
+    dxdv = ra / fa0
     return [dxdv]
 
 
-# Lógica para descobrir o volume se o usuário pediu
+# Lógica para descobrir o volume se o utilizador pediu
 if definirx and xalvo > 0:
-    # Função evento: o solve_ivp vai parar exatamente quando a conversão atingir o alvo
     def atingiu_conversao(v, x_conv):
         return x_conv[0] - xalvo
     atingiu_conversao.terminal = True
     
-    # Roda a simulação até um volume gigante (100.000), mas ele para sozinho no momento certo
-    res_temp = solve_ivp(edopfr, [0, 100000], [0.0], events=atingiu_conversao)
-    volusado = res_temp.t[-1] # Pega o exato volume onde a simulação parou
+    res_temp = solve_ivp(edopfr, [0, 1000000], [0.0], events=atingiu_conversao)
+    
+    # Verifica se o solver atingiu a conversão ou se parou porque o limitante B acabou antes
+    if len(res_temp.t_events[0]) > 0:
+        volusado = res_temp.t_events[0][0]
+    else:
+        volusado = res_temp.t[-1]
+        st.error("⚠️ Atenção: A conversão alvo não pode ser atingida! Um dos reagentes acabou antes do tempo.")
 else:
     volusado = vtotal
 
@@ -115,10 +132,12 @@ vspan = np.linspace(0, volusado, 200)
 
 # Resolução definitiva da equação
 resultado = solve_ivp(edopfr, [0, volusado], [0.0], t_eval=vspan)
-xres = resultado.y[0]
 
-# Calcular os vetores de concentração para gerar as curvas do gráfico
-ca_perfil = ca0 * (1 - xres)
+# TRAVA FINAL: Limpa qualquer erro de arredondamento da máquina (ex: 1.000001 volta a 1.0)
+xres = np.clip(resultado.y[0], 0.0, 1.0)
+
+# Recalcula as concentrações para o gráfico garantindo que nunca ficam abaixo de 0
+ca_perfil = np.maximum(ca0 * (1 - xres), 0.0)
 if num_reagentes == 2:
     cb_perfil = reagentes[1]["c0"] - (reagentes[1]["coef"] / coefA) * (ca0 * xres)
     cb_perfil = np.maximum(cb_perfil, 0.0)
@@ -143,29 +162,34 @@ st.subheader("Análise Gráfica")
 
 colg1, colg2 = st.columns(2)
 
-# Configurações estéticas (Deixando o gráfico com aparência profissional)
+# Configurações estéticas do Matplotlib
 plt.style.use('bmh') 
 
 with colg1:
     fig1, ax1 = plt.subplots(figsize=(6, 4))
-    ax1.plot(vspan, xres * 100, color='#E63946', linewidth=3) # Vermelho elegante
-    ax1.fill_between(vspan, xres * 100, color='#E63946', alpha=0.1) # Sombra em baixo da curva
+    ax1.plot(vspan, xres * 100, color='#E63946', linewidth=3)
+    ax1.fill_between(vspan, xres * 100, color='#E63946', alpha=0.1)
     ax1.set_title("Evolução da Conversão", fontsize=12, fontweight='bold', pad=10)
     ax1.set_xlabel("Volume do Reator (L)", fontsize=10)
     ax1.set_ylabel("Conversão (%)", fontsize=10)
+    
+    # Trava visual no gráfico para ir exatamente de 0 até 105% (fica mais elegante)
+    ax1.set_ylim(-2, 105) 
     st.pyplot(fig1)
 
 with colg2:
     fig2, ax2 = plt.subplots(figsize=(6, 4))
-    ax2.plot(vspan, ca_perfil, color='#1D3557', linewidth=2.5, label='Reagente A') # Azul escuro
+    ax2.plot(vspan, ca_perfil, color='#1D3557', linewidth=2.5, label='Reagente A')
     
-    # Se houver 2 reagentes, plota a linha do B no mesmo gráfico
     if num_reagentes == 2:
-        ax2.plot(vspan, cb_perfil, color='#457B9D', linewidth=2.5, label='Reagente B') # Azul claro
+        ax2.plot(vspan, cb_perfil, color='#457B9D', linewidth=2.5, label='Reagente B')
         
     ax2.set_title("Perfil de Concentrações", fontsize=12, fontweight='bold', pad=10)
     ax2.set_xlabel("Volume do Reator (L)", fontsize=10)
     ax2.set_ylabel("Concentração (mol/L)", fontsize=10)
+    
+    # Se a concentração começar muito alta, garante que o eixo Y arranca do 0
+    ax2.set_ylim(bottom=-0.1) 
     ax2.legend()
     st.pyplot(fig2)
 
@@ -186,11 +210,9 @@ if mostrartabela:
         
     df = pd.DataFrame(dados)
     
-    # Resume a tabela para não poluir o ecrã
     df_resumo = df.iloc[::10, :].copy()
     df_resumo = pd.concat([df_resumo, df.iloc[[-1]]]).drop_duplicates()
     
-    # Formatação das casas decimais da tabela
     formatacao = {"Volume (L)": "{:.2f}", "Conversão (X)": "{:.4f}", "Conc. A (mol/L)": "{:.4f}"}
     if num_reagentes == 2: 
         formatacao["Conc. B (mol/L)"] = "{:.4f}"
