@@ -44,7 +44,8 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("💧 Reagentes na Alimentação")
-num_reagentes = st.sidebar.slider("Número de Reagentes", 1, 3, 1)
+# Limitado agora a no máximo 2 reagentes
+num_reagentes = st.sidebar.slider("Número de Reagentes", 1, 2, 1)
 
 reagentes = []
 for i in range(num_reagentes):
@@ -58,6 +59,7 @@ simular = st.sidebar.button("Rodar Simulação", type="primary", use_container_w
 
 st.sidebar.write("---")
 st.sidebar.write("Desenvolvido por Gabriel Scudino Freitas")
+st.sidebar.write("UFES - Projeto Computacional")
 
 
 # ==========================================
@@ -78,8 +80,8 @@ def edopfr(v, x_conv):
     # 2. Base da taxa de reação
     ra = k * ca
     
-    # 3. Incluir a concentração dos outros reagentes na taxa (Cinética Elementar)
-    if num_reagentes >= 2:
+    # 3. Incluir a concentração do segundo reagente na taxa (se existir)
+    if num_reagentes == 2:
         cb0 = reagentes[1]["c0"]
         coefB = reagentes[1]["coef"]
         
@@ -87,15 +89,6 @@ def edopfr(v, x_conv):
         cb = cb0 - (coefB / coefA) * (ca0 * conversao)
         cb = max(cb, 0.0) # Evitar que fique negativo matematicamente
         ra = ra * cb
-        
-    if num_reagentes == 3:
-        cc0 = reagentes[2]["c0"]
-        coefC = reagentes[2]["coef"]
-        
-        # Balanço estequiométrico simples para o reagente C
-        cc = cc0 - (coefC / coefA) * (ca0 * conversao)
-        cc = max(cc, 0.0)
-        ra = ra * cc
 
     # 4. Finalizar a EDO dX/dV
     fa0 = ca0 * v0
@@ -126,12 +119,9 @@ xres = resultado.y[0]
 
 # Calcular os vetores de concentração para gerar as curvas do gráfico
 ca_perfil = ca0 * (1 - xres)
-if num_reagentes >= 2:
+if num_reagentes == 2:
     cb_perfil = reagentes[1]["c0"] - (reagentes[1]["coef"] / coefA) * (ca0 * xres)
     cb_perfil = np.maximum(cb_perfil, 0.0)
-if num_reagentes == 3:
-    cc_perfil = reagentes[2]["c0"] - (reagentes[2]["coef"] / coefA) * (ca0 * xres)
-    cc_perfil = np.maximum(cc_perfil, 0.0)
 
 
 # ==========================================
@@ -154,7 +144,7 @@ st.subheader("Análise Gráfica")
 colg1, colg2 = st.columns(2)
 
 # Configurações estéticas (Deixando o gráfico com aparência profissional)
-plt.style.use('bmh') # Estilo de grade bonito nativo do Matplotlib
+plt.style.use('bmh') 
 
 with colg1:
     fig1, ax1 = plt.subplots(figsize=(6, 4))
@@ -169,11 +159,9 @@ with colg2:
     fig2, ax2 = plt.subplots(figsize=(6, 4))
     ax2.plot(vspan, ca_perfil, color='#1D3557', linewidth=2.5, label='Reagente A') # Azul escuro
     
-    # Se houver mais reagentes, plota as linhas deles no mesmo gráfico de concentração
-    if num_reagentes >= 2:
+    # Se houver 2 reagentes, plota a linha do B no mesmo gráfico
+    if num_reagentes == 2:
         ax2.plot(vspan, cb_perfil, color='#457B9D', linewidth=2.5, label='Reagente B') # Azul claro
-    if num_reagentes == 3:
-        ax2.plot(vspan, cc_perfil, color='#2A9D8F', linewidth=2.5, label='Reagente C') # Verde esmeralda
         
     ax2.set_title("Perfil de Concentrações", fontsize=12, fontweight='bold', pad=10)
     ax2.set_xlabel("Volume do Reator (L)", fontsize=10)
@@ -193,10 +181,8 @@ if mostrartabela:
         "Conversão (X)": xres,
         "Conc. A (mol/L)": ca_perfil
     }
-    if num_reagentes >= 2:
+    if num_reagentes == 2:
         dados["Conc. B (mol/L)"] = cb_perfil
-    if num_reagentes == 3:
-        dados["Conc. C (mol/L)"] = cc_perfil
         
     df = pd.DataFrame(dados)
     
@@ -206,8 +192,8 @@ if mostrartabela:
     
     # Formatação das casas decimais da tabela
     formatacao = {"Volume (L)": "{:.2f}", "Conversão (X)": "{:.4f}", "Conc. A (mol/L)": "{:.4f}"}
-    if num_reagentes >= 2: formatacao["Conc. B (mol/L)"] = "{:.4f}"
-    if num_reagentes == 3: formatacao["Conc. C (mol/L)"] = "{:.4f}"
+    if num_reagentes == 2: 
+        formatacao["Conc. B (mol/L)"] = "{:.4f}"
         
     st.dataframe(df_resumo.style.format(formatacao), use_container_width=True)
 
