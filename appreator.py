@@ -7,12 +7,8 @@ from scipy.integrate import solve_ivp
 # --- CONFIGURACAO DA PAGINA ---
 st.set_page_config(page_title="Simulador PFR", page_icon="🧪", layout="wide")
 
-# Constante universal
-Rjoule = 8.314
 
-# ==========================================
-# BARRA LATERAL (ENTRADAS DE DADOS)
-# ==========================================
+Rjoule = 8.314
 st.sidebar.title("🧪 Parametros do Reator")
 st.sidebar.write("Simulacao em Fase Liquida")
 st.sidebar.markdown("---")
@@ -60,10 +56,7 @@ st.sidebar.write("---")
 st.sidebar.write("Desenvolvido por Gabriel Scudino Freitas")
 st.sidebar.write("UFES - Projeto Computacional")
 
-
-# ==========================================
-# VERIFICACAO FISICA ANTES DO CALCULO
-# ==========================================
+# Verifica a concistencia fisica
 ca0 = reagentes[0]["c0"]
 coefA = reagentes[0]["coef"]
 
@@ -77,16 +70,11 @@ if numreagentes == 2:
     if xmaxB < 1.0:
         xmaxpossivel = xmaxB
 
-# Se o utilizador pedir algo impossivel, bloqueamos o calculo!
+# Usei meio que o pensamento do Try Except
 erroconversao = False
 if definirx and xalvo > xmaxpossivel:
     erroconversao = True
     st.error(f"❌ **Erro Físico:** É impossível atingir {xalvo*100}% de conversão! O Reagente B vai esgotar-se quando a conversão de A atingir {xmaxpossivel*100:.1f}%. Aumente a concentração inicial de B ou diminua a conversão alvo.")
-
-
-# ==========================================
-# MOTOR MATEMATICO (ESTILO ESTUDANTE)
-# ==========================================
 
 if not erroconversao:
     
@@ -110,7 +98,7 @@ if not erroconversao:
                 cb = 0.0
                 ra = 0.0 
             else:
-                # CORREÇÃO FÍSICA: Cinética Elementar (elevado ao coeficiente)
+                # CORREÇÃO FÍSICA: Cinética Elementar (elevado ao coeficiente) tava dando probnlema pois ele fixava ordem 1
                 ra = ra * (cb ** coefB)
     
         fa0 = ca0 * v0
@@ -147,11 +135,8 @@ if not erroconversao:
     if numreagentes == 2:
         cbperfil = cb0 - (coefB / coefA) * (ca0 * xres)
         cbperfil = np.maximum(cbperfil, 0.0)
-
-
-    # ==========================================
-    # INTERFACE E GRAFICOS BONITOS
-    # ==========================================
+        
+#Parte de Graficos
     
     st.title("Simulador de Reator Fluxo Pistao (PFR)")
     st.info("A simulacao decorre em **fase liquida** (volume constante) utilizando cinetica elementar baseada na quantidade de reagentes informados.")
