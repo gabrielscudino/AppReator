@@ -9,9 +9,7 @@ st.set_page_config(page_title="Simulador PFR", page_icon="🧪", layout="wide")
 
 Rjoule = 8.314
 
-# ==========================================
-# BARRA LATERAL (ENTRADAS DE DADOS)
-# ==========================================
+
 st.sidebar.title("🧪 Parâmetros do Reator")
 st.sidebar.write("Simulação em Fase Líquida")
 st.sidebar.markdown("---")
@@ -21,7 +19,7 @@ tempC = st.sidebar.number_input("Temperatura (°C)", value=25.0)
 v0 = st.sidebar.number_input("Vazão Inicial (L/min)", value=10.0)
 vtotal = st.sidebar.number_input("Volume do Reator (L)", value=100.0)
 
-# Opção de dimensionamento reverso
+
 definirx = st.sidebar.checkbox("Calcular volume pela conversão alvo")
 xalvo = 0.0
 if definirx:
@@ -60,36 +58,31 @@ st.sidebar.write("Desenvolvido por Gabriel Scudino Freitas")
 st.sidebar.write("UFES - Projeto Computacional")
 
 
-# ==========================================
-# VERIFICAÇÃO FÍSICA ANTES DO CÁLCULO
-# ==========================================
+
 ca0 = reagentes[0]["c0"]
 coefA = reagentes[0]["coef"]
 
-# Calcular qual é a conversão MÁXIMA possível de A antes de B acabar
+
 xmaxpossivel = 1.0
 if numreagentes == 2:
     cb0 = reagentes[1]["c0"]
     coefB = reagentes[1]["coef"]
-    # Pela estequiometria, X máximo ocorre quando Cb = 0
+    
     xmaxB = (cb0 * coefA) / (ca0 * coefB)
     if xmaxB < 1.0:
         xmaxpossivel = xmaxB
 
-# Lógica de verificação contra valores impossíveis
+
 erroconversao = False
 if definirx and xalvo > xmaxpossivel:
     erroconversao = True
     st.error(f"❌ **Erro Físico:** É impossível atingir {xalvo*100}% de conversão! O Reagente B vai esgotar-se quando a conversão de A atingir {xmaxpossivel*100:.1f}%. Aumente a concentração inicial de B ou diminua a conversão alvo.")
 
 
-# ==========================================
-# MOTOR MATEMÁTICO (ESTILO ESTUDANTE)
-# ==========================================
 
 if not erroconversao:
     
-    # A equação diferencial que vai para o solve_ivp
+    
     def edopfr(v, xconv):
         conversao = xconv[0]
         
@@ -118,25 +111,25 @@ if not erroconversao:
         return [dxdv]
     
     
-    # Lógica para descobrir o volume se o utilizador pediu
+
     if definirx and xalvo > 0:
         def atingiuconversao(v, xconv):
             return xconv[0] - xalvo
         atingiuconversao.terminal = True
         
-        # O programa procura o volume exato onde o alvo é atingido
+       
         restemp = solve_ivp(edopfr, [0, 1000000], [0.0], events=atingiuconversao)
         volusado = restemp.t[-1] 
     else:
         volusado = vtotal
     
-    # Criar os pontos do eixo X 
+
     vspan = np.linspace(0, volusado, 200)
     
-    # Resolução definitiva da equação
+
     resultado = solve_ivp(edopfr, [0, volusado], [0.0], t_eval=vspan)
     
-    # Cortar errinhos matemáticos do computador
+
     xres = np.clip(resultado.y[0], 0.0, 1.0)
     
     # Recalcula as concentrações para o gráfico 
@@ -145,11 +138,7 @@ if not erroconversao:
         cbperfil = cb0 - (coefB / coefA) * (ca0 * xres)
         cbperfil = np.maximum(cbperfil, 0.0)
         
-    
-    # ==========================================
-    # INTERFACE PRINCIPAL (ABAS)
-    # ==========================================
-    
+
     st.title("Simulador de Reator Fluxo Pistão (PFR)")
     
     # Criação das duas abas principais
